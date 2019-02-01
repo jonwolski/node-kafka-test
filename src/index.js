@@ -1,43 +1,17 @@
-var Kafka = require('node-rdkafka');
+// cf. https://github.com/tulios/kafkajs/blob/master/examples/consumer.js
+const { Kafka, logLevel } = require('kafkajs')
 
-
-var consumer = new Kafka.KafkaConsumer({
-  'group.id': process.env.KAFKA_CONSUMER_GROUP_ID || 'kafka-0',
-  'metadata.broker.list': process.env.KAFKA_BORKERS || 'localhost:9092',
-  'offset_commit_cb': function(err, topicPartitions) {
-
-    if (err) {
-      // There was an error committing
-      console.error(err);
-    } else {
-      // Commit went through. Let's log the topic partitions
-      console.log(topicPartitions);
-    }
-
-  }
+const kafka = new Kafka({
+    logLevel: logLevel.INFO,
+    brokers: (process.env.KAFKA_BORKERS || 'localhost:9092').split(","),
+    clientId: 'example-consumer',
 })
 
+const consumer = kafka.consumer({
+  groupId: process.env.KAFKA_CONSUMER_GROUP_ID || 'kafka-0',
+})
 
-console.log("connecting consumer ...")
-consumer.connect();
-console.log("... consumer connected")
-
-let i = 100
 const TOPIC_NAME = process.env.KAFKA_TOPIC || 'sync-test'
-
-consumer
-	.on('ready', function() {
-		console.log("consumer subscribing ...")
-		consumer.subscribe([TOPIC_NAME]);
-		console.log("... consumer subscribed")
-
-		consumer.consume();
-	})
-	.on('data', async function(data) {
-		await sleep(1000 + 9 * i--)
-		// Output the actual message contents
-		console.log(data.value.toString());
-	});
 
 function sleep(ms){
     return new Promise(resolve=>{
@@ -45,3 +19,44 @@ function sleep(ms){
     })
 }
 
+const run = async () => {
+	let i = 10
+  const topic = TOPIC_NAME
+  await consumer.connect()
+  await consumer.subscribe({ topic })
+  await consumer.run({
+    eachMessage: async ({ topic, partition, message }) => {
+			await sleep(9 * i--)
+      const prefix = `${topic}[${partition} | ${message.offset}] / ${message.timestamp}`
+      console.log(`- ${prefix} ${message.key}#${message.value}`)
+    },
+  })
+}
+
+run().catch(e => console.error(`[example/consumer] ${e.message}`, e))
+
+const errorTypes = ['unhandledRejection', 'uncaughtException']
+const signalTraps = ['SIGTERM', 'SIGINT', 'SIGUSR2']
+
+errorTypes.map(type => {
+  process.on(type, async e => {
+    try {
+      console.log(`process.on ${type}`)
+      console.error(e)
+      await consumer.disconnect()
+      process.exit(0)
+    } catch (_) {
+      process.exit(1)
+    }
+  })
+})
+
+signalTraps.map(type => {
+  process.once(type, async () => {
+    try {
+      await consumer.disconnect()
+    } finally {
+      process.kill(process.pid, type)
+    }
+  })
+})

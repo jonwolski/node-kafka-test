@@ -9,6 +9,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "node-rdkafka": "^2.5.1"
+    "kafkajs": "^1.4.7"
   }
 }
