@@ -33,8 +33,8 @@ consumer
 
 		consumer.consume();
 	})
-	.on('data', function(data) {
-		sleep(1000 + 9 * i--)
+	.on('data', async function(data) {
+		await sleep(1000 + 9 * i--)
 		// Output the actual message contents
 		console.log(data.value.toString());
 	});
